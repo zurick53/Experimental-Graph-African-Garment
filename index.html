@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>African Cultural Garmenten</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+
+#siteTitle{
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  text-align: center;
+  pointer-events: none;
+  color: #111;
+  font-family: sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#siteTitle .titleLine{
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+#siteTitle .subtitleLine{
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+
+:root { --panel-bg: #ffffffee; --border: #d0d0d0; --shadow: rgba(0,0,0,.12); }
+body { font-family: sans-serif; margin: 0; overflow: hidden; background: #fff; }
+svg { width: 100vw; height: 100vh; display: block; }
+button, input, select { font: inherit; }
+#topbar, #searchBar, #panel, #gate, #inspector {
+  position: fixed; z-index: 20; background: var(--panel-bg); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 6px 18px var(--shadow);
+}
+#topbar {
+  top: 10px; left: 10px; right: 10px; padding: 10px;
+  display: none; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+#topbar form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
+#topbar input, #topbar select { padding: 6px 8px; }
+#searchBar { top: 92px; left: 10px; padding: 8px; display: flex; gap: 8px; align-items: center; }
+#panel {
+  right: 10px; bottom: 10px; width: 330px; max-height: 360px; overflow: auto; padding: 10px; display: none;
+}
+#inspector {
+  right: 10px; top: 92px; width: 320px; max-height: 400px; overflow: auto; padding: 10px; display: none;
+}
+#gate {
+  left: 10px; bottom: 10px; padding: 10px; display: flex; gap: 8px; align-items: center;
+}
+#gateStatus { font-size: 12px; opacity: .85; }
+.small { font-size: 12px; }
+.node-item { font-size: 12px; display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; align-items: center; }
+.groupTitle { font-size: 12px; font-weight: 700; margin: 10px 0 6px; }
+.parent-link { cursor: pointer; color: #1f77b4; text-decoration: underline; }
+.attr-group { margin: 2px 0; }
+.attr-group .groupTitle { margin: 4px 0 2px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="siteTitle">
+    <div class="titleLine">Experimental / Research / Graphs</div>
+    <div class="subtitleLine">African Cultural Garment</div>
+  </div>
+
+
+<div id="topbar">
+  <form id="form">
+    <input id="name" placeholder="Nom" required>
+    <select id="type">
+      <option value="textile">textile</option>
+      <option value="region">region</option>
+      <option value="material">material</option>
+      <option value="technique">technique</option>
+      <option value="brand">brand</option>
+      <option value="category">category</option>
+    </select>
+    <select id="parentSelect" multiple size="4" style="width: 180px;">
+    </select>
+    <input id="region" placeholder="Région">
+    <input id="material" placeholder="Matière">
+    <input id="technique" placeholder="Technique">
+    <input id="brand" placeholder="Marque">
+    <input id="link" placeholder="Lien">
+    <button type="submit">Ajouter</button>
+  </form>
+</div>
+
+<div id="searchBar">
+  <input id="search" placeholder="Recherche">
+  <button id="zoomIn" type="button">+</button>
+  <button id="zoomOut" type="button">-</button>
+  <button id="resetZoom" type="button">Reset</button>
+</div>
+
+<div id="gate">
+  <input id="passwordInput" type="password" placeholder="Mot de passe édition">
+  <button id="unlockBtn" type="button">Débloquer édition</button>
+  <span id="gateStatus">Édition verrouillée</span>
+</div>
+
+<div id="inspector">
+  <div id="inspectorContent"></div>
+</div>
+
+<svg></svg>
+<div id="panel"></div>
+
+<script>
+const EDIT_PASSWORD = 'corentin';
+const colors = { root:'#000', textile:'#1f77b4', region:'#e63946', material:'#2a9d8f', technique:'#f4a261', brand:'#9b5de5', category:'#444' };
+const svg = d3.select('svg');
+const width = window.innerWidth;
+const height = window.innerHeight;
+let nodes = [];
+let links = [];
+let editUnlocked = false;
+let selectedNode = null;
+let linkLayer = svg.append('g').attr('class', 'links');
+let nodeLayer = svg.append('g').attr('class', 'nodes');
+let link = linkLayer.selectAll('line');
+let node = nodeLayer.selectAll('g');
+const zoom = d3.zoom().scaleExtent([0.15, 4]).on('zoom', (event) => {
+  nodeLayer.attr('transform', event.transform);
+  linkLayer.attr('transform', event.transform);
+});
+svg.call(zoom);
+
+const simulation = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d => d.id).distance(145))
+  .force('charge', d3.forceManyBody().strength(-260))
+  .force('collide', d3.forceCollide().radius(d => 20 + getNodeSize(d) * 2))
+  .force('center', d3.forceCenter(width / 2, height / 2));
+
+function clean(v) { return (v || '').trim(); }
+function slug(v) { return String(v).replace(/[^a-zA-Z0-9_-]/g, '_'); }
+function normalizeLinks(rawLinks = []) {
+  return rawLinks.map(l => ({
+    source: typeof l.source === 'object' ? l.source.id : l.source,
+    target: typeof l.target === 'object' ? l.target.id : l.target,
+    kind: l.kind || 'custom'
+  })).filter(l => clean(l.source) && clean(l.target));
+}
+function loadData() {
+  const raw = localStorage.getItem('graphData');
+  if (!raw) {
+    nodes = [{ id: 'Textile', type: 'root', fx: width / 2, fy: height / 2 }];
+    links = [];
+    return;
+  }
+  const data = JSON.parse(raw);
+  nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => ({ id: clean(n.id), type: n.type || 'textile', link: n.link || undefined }));
+  nodes = nodes.filter(n => n.id);
+  if (!nodes.find(n => n.id === 'Textile')) nodes.unshift({ id: 'Textile', type: 'root', fx: width / 2, fy: height / 2 });
+  links = normalizeLinks(Array.isArray(data.links) ? data.links : []);
+  links = links.filter(l => nodes.some(n => n.id === l.source) && nodes.some(n => n.id === l.target));
+}
+function saveData() {
+  const cleanNodes = nodes.map(n => ({ id: n.id, type: n.type, link: n.link || undefined, fx: n.id === 'Textile' ? width / 2 : undefined, fy: n.id === 'Textile' ? height / 2 : undefined }));
+  const cleanLinks = links.map(l => ({ source: typeof l.source === 'object' ? l.source.id : l.source, target: typeof l.target === 'object' ? l.target.id : l.target, kind: l.kind || 'custom' }))
+    .filter(l => clean(l.source) && clean(l.target));
+  localStorage.setItem('graphData', JSON.stringify({ nodes: cleanNodes, links: cleanLinks }));
+}
+function getType(id) { const n = nodes.find(n => n.id === id); return n ? n.type : null; }
+function getNodeSize(n) {
+  return links.filter(l => {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    return s === n.id || t === n.id;
+  }).length;
+}
+function ensureNode(id, type = 'category', linkUrl = null) {
+  id = clean(id); if (!id) return;
+  let existing = nodes.find(n => n.id === id);
+  if (!existing) { nodes.push({ id, type, link: linkUrl || undefined }); existing = nodes[nodes.length - 1]; }
+  else {
+    if (linkUrl) existing.link = linkUrl;
+    if (type && existing.id !== 'Textile') existing.type = type;
+  }
+  return existing;
+}
+function addLink(source, target, kind = 'custom') {
+  source = clean(source); target = clean(target);
+  if (!source || !target || source === target) return;
+  const exists = links.some(l => {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    return s === source && t === target && (l.kind || 'custom') === kind;
+  });
+  if (!exists) links.push({ source, target, kind });
+}
+function removeNode(id) {
+  if (id === 'Textile') return;
+  nodes = nodes.filter(n => n.id !== id);
+  links = links.filter(l => {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    return s !== id && t !== id;
+  });
+  saveData(); updateGraph();
+}
+function drag(simulation) {
+  return d3.drag()
+    .on('start', (event, d) => { if (!event.active) simulation.alphaTarget(0.25).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+    .on('end', (event, d) => { if (!event.active) simulation.alphaTarget(0); if (d.id !== 'Textile') { d.fx = null; d.fy = null; } });
+}
+function updateParentSelect() {
+  const sel = document.getElementById('parentSelect');
+  sel.innerHTML = '';
+  const opts = ['Textile', ...nodes.map(n => n.id).filter(id => id !== 'Textile').sort((a,b) => a.localeCompare(b, 'fr'))];
+  opts.forEach(id => { 
+    const o = document.createElement('option'); 
+    o.value = id; 
+    o.textContent = id; 
+    sel.appendChild(o); 
+  });
+}
+function updatePanel() {
+  const panel = document.getElementById('panel'); panel.innerHTML = '';
+  const title = document.createElement('div'); title.className = 'groupTitle'; title.textContent = 'Nœuds'; panel.appendChild(title);
+  nodes.filter(n => n.id !== 'Textile').forEach(n => {
+    const div = document.createElement('div'); div.className = 'node-item';
+    const label = document.createElement('span'); label.textContent = `${n.id} (${n.type})`;
+    const btn = document.createElement('button'); btn.textContent = 'x'; btn.disabled = !editUnlocked; btn.addEventListener('click', () => removeNode(n.id));
+    div.appendChild(label); div.appendChild(btn); panel.appendChild(div);
+  });
+}
+function showInspector(nodeId) {
+  selectedNode = nodeId;
+  const node = nodes.find(n => n.id === nodeId);
+  const content = document.getElementById('inspectorContent');
+  content.innerHTML = '';
+  if (!node) return;
+  const title = document.createElement('div'); title.className = 'groupTitle'; title.textContent = `Inspecteur : ${node.id} (${node.type})`; content.appendChild(title);
+  if (node.link) {
+    const linkDiv = document.createElement('div'); linkDiv.innerHTML = `<a href="${node.link}" target="_blank" style="color: #1f77b4;">🔗 Lien</a>`; content.appendChild(linkDiv);
+  }
+  const parents = links.filter(l => l.target === nodeId && l.kind === 'parent').map(l => typeof l.source === 'object' ? l.source.id : l.source);
+  if (parents.length) {
+    const pTitle = document.createElement('div'); pTitle.className = 'groupTitle'; pTitle.textContent = 'Parents'; content.appendChild(pTitle);
+    parents.forEach(p => {
+      const pDiv = document.createElement('div'); pDiv.innerHTML = `<span class="parent-link" onclick="showInspector('${p}')">${p}</span>`; content.appendChild(pDiv);
+    });
+  }
+  const children = links.filter(l => l.source === nodeId && l.kind === 'parent').map(l => typeof l.target === 'object' ? l.target.id : l.target);
+  if (children.length) {
+    const cTitle = document.createElement('div'); cTitle.className = 'groupTitle'; cTitle.textContent = 'Enfants'; content.appendChild(cTitle);
+    children.forEach(c => {
+      const cDiv = document.createElement('div'); cDiv.innerHTML = `<span class="parent-link" onclick="showInspector('${c}')">${c}</span>`; content.appendChild(cDiv);
+    });
+  }
+  const connections = {};
+  links.filter(l => (l.source === nodeId || l.target === nodeId) && l.kind !== 'parent').forEach(l => {
+    const other = l.source === nodeId ? (typeof l.target === 'object' ? l.target.id : l.target) : (typeof l.source === 'object' ? l.source.id : l.source);
+    const type = getType(other);
+    if (type && !connections[type]) connections[type] = [];
+    if (type) connections[type].push(other);
+  });
+  Object.entries(connections).forEach(([type, items]) => {
+    const gTitle = document.createElement('div'); gTitle.className = 'groupTitle'; gTitle.textContent = type.toUpperCase(); content.appendChild(gTitle);
+    items.sort().forEach(item => {
+      const itemDiv = document.createElement('div'); itemDiv.className = 'attr-group'; 
+      itemDiv.innerHTML = `<span class="parent-link" onclick="showInspector('${item}')">${item}</span>`; 
+      content.appendChild(itemDiv);
+    });
+  });
+  document.getElementById('inspector').style.display = 'block';
+}
+function updateGraph() {
+  links = normalizeLinks(links).filter(l => nodes.some(n => n.id === l.source) && nodes.some(n => n.id === l.target));
+  saveData();
+  svg.selectAll('*').remove();
+  linkLayer = svg.append('g').attr('class', 'links');
+  nodeLayer = svg.append('g').attr('class', 'nodes');
+  const defs = svg.append('defs');
+  link = linkLayer.selectAll('line').data(links, d => `${d.source}-${d.target}-${d.kind || 'custom'}`);
+  link.exit().remove();
+  link = link.enter().append('line').merge(link)
+    .attr('stroke-width', d => d.kind === 'parent' ? 2.2 : 1.5)
+    .attr('stroke-linecap', 'round')
+    .attr('stroke', d => {
+      const s = typeof d.source === 'object' ? d.source.id : d.source;
+      const t = typeof d.target === 'object' ? d.target.id : d.target;
+      const gradId = `grad-${slug(s)}-${slug(t)}`;
+      defs.select(`#${CSS.escape(gradId)}`).remove();
+      const grad = defs.append('linearGradient').attr('id', gradId);
+      grad.append('stop').attr('offset', '0%').attr('stop-color', colors[getType(s)] || '#999');
+      grad.append('stop').attr('offset', '100%').attr('stop-color', colors[getType(t)] || '#999');
+      return `url(#${gradId})`;
+    });
+  node = nodeLayer.selectAll('g').data(nodes, d => d.id);
+  node.exit().remove();
+  const nodeEnter = node.enter().append('g').call(drag(simulation));
+  nodeEnter.append('circle').attr('fill', '#fff');
+  nodeEnter.append('text').attr('text-anchor', 'middle').attr('dy', 4).style('font-size', '10px').style('pointer-events', 'none');
+  node = nodeEnter.merge(node);
+  node.select('circle')
+    .attr('r', d => 12 + getNodeSize(d) * 2)
+    .attr('stroke', d => colors[d.type] || '#000')
+    .attr('stroke-width', d => d.id === 'Textile' ? 2.5 : 1.8)
+    .attr('fill', '#fff');
+  node.select('text').text(d => d.id);
+  node.on('click', (event, d) => { showInspector(d.id); });
+  simulation.nodes(nodes);
+  simulation.force('link').links(links);
+  simulation.alpha(1).restart();
+  simulation.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+  updateParentSelect();
+  updatePanel();
+}
+function setSearchHighlight(value) {
+  const v = (value || '').toLowerCase();
+  node.select('circle')
+    .attr('stroke-width', d => d.id.toLowerCase().includes(v) ? 4 : (d.id === 'Textile' ? 2.5 : 1.8))
+    .attr('opacity', d => !v || d.id.toLowerCase().includes(v) ? 1 : 0.22);
+  link.attr('opacity', d => {
+    const s = (typeof d.source === 'object' ? d.source.id : d.source).toLowerCase();
+    const t = (typeof d.target === 'object' ? d.target.id : d.target).toLowerCase();
+    return !v || s.includes(v) || t.includes(v) ? 1 : 0.12;
+  });
+}
+function setEditUnlocked(v) {
+  editUnlocked = v;
+  document.getElementById('gateStatus').textContent = v ? 'Édition débloquée' : 'Édition verrouillée';
+  document.getElementById('topbar').style.display = v ? 'flex' : 'none';
+  document.getElementById('panel').style.display = v ? 'block' : 'none';
+}
+function unlock() {
+  const v = document.getElementById('passwordInput').value.trim().toLowerCase();
+  if (v === EDIT_PASSWORD) { setEditUnlocked(true); }
+  else alert('Mot de passe incorrect');
+}
+document.getElementById('unlockBtn').addEventListener('click', unlock);
+document.getElementById('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+document.getElementById('form').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!editUnlocked) return;
+  const name = clean(document.getElementById('name').value);
+  const type = clean(document.getElementById('type').value) || 'category';
+  const parentSel = document.getElementById('parentSelect');
+  const selectedParents = Array.from(parentSel.selectedOptions).map(opt => clean(opt.value));
+  const region = clean(document.getElementById('region').value);
+  const material = clean(document.getElementById('material').value);
+  const technique = clean(document.getElementById('technique').value);
+  const brand = clean(document.getElementById('brand').value);
+  const linkUrl = clean(document.getElementById('link').value);
+  if (!name) return;
+  ensureNode(name, type, linkUrl || null);
+  selectedParents.forEach(parent => {
+    if (parent) { ensureNode(parent, parent === 'Textile' ? 'root' : 'category'); addLink(parent, name, 'parent'); }
+  });
+  if (region) { ensureNode(region, 'region'); addLink(name, region, 'attribute'); }
+  if (material) { ensureNode(material, 'material'); addLink(name, material, 'attribute'); }
+  if (technique) { ensureNode(technique, 'technique'); addLink(name, technique, 'attribute'); }
+  if (brand) { ensureNode(brand, 'brand'); addLink(name, brand, 'attribute'); }
+  saveData(); updateGraph(); e.target.reset(); parentSel.selectedIndex = -1;
+});
+document.getElementById('search').addEventListener('input', e => setSearchHighlight(e.target.value));
+document.getElementById('zoomIn').addEventListener('click', () => svg.transition().call(zoom.scaleBy, 1.2));
+document.getElementById('zoomOut').addEventListener('click', () => svg.transition().call(zoom.scaleBy, 0.8));
+document.getElementById('resetZoom').addEventListener('click', () => svg.transition().call(zoom.transform, d3.zoomIdentity));
+window.addEventListener('beforeunload', saveData);
+loadData();
+setEditUnlocked(false);
+updateGraph();
+</script>
+</body>
+</html>
