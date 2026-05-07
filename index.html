@@ -444,9 +444,10 @@ document.getElementById('zoomIn').addEventListener('click', () => svg.transition
 document.getElementById('zoomOut').addEventListener('click', () => svg.transition().call(zoom.scaleBy, 0.8));
 document.getElementById('resetZoom').addEventListener('click', () => svg.transition().call(zoom.transform, d3.zoomIdentity));
 window.addEventListener('beforeunload', saveData);
-loadData();
-setEditUnlocked(false);
-updateGraph();
+loadData().then(() => {
+  setEditUnlocked(false);
+  updateGraph();
+});
 </script>
 </body>
 </html>
