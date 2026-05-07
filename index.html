@@ -153,13 +153,37 @@ function normalizeLinks(rawLinks = []) {
     kind: l.kind || 'custom'
   })).filter(l => clean(l.source) && clean(l.target));
 }
-function loadData() {
-  const raw = localStorage.getItem('graphData');
-  if (!raw) {
-    nodes = [{ id: 'Textile', type: 'root', fx: width / 2, fy: height / 2 }];
-    links = [];
+async function loadData() {
+
+  const rawLocal = localStorage.getItem('graphData');
+
+  if (rawLocal) {
+    const data = JSON.parse(rawLocal);
+    applyData(data);
+    updateGraph();
     return;
   }
+
+  const res = await fetch('./graphData.json');
+  const data = await res.json();
+
+  applyData(data);
+  updateGraph();
+}
+
+  function applyData(data) {
+  nodes = (data.nodes || []).map(n => ({
+    id: clean(n.id),
+    type: n.type,
+    link: n.link
+  }));
+
+  links = normalizeLinks(data.links || []);
+
+  if (!nodes.find(n => n.id === 'Textile')) {
+    nodes.unshift({ id: 'Textile', type: 'root', fx: width/2, fy: height/2 });
+  }
+}
   const data = JSON.parse(raw);
   nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => ({ id: clean(n.id), type: n.type || 'textile', link: n.link || undefined }));
   nodes = nodes.filter(n => n.id);
