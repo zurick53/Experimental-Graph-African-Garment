@@ -235,8 +235,6 @@ async function loadData() {
     links = [];
   }
 }
-
-}
   const data = JSON.parse(raw);
   nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => ({ id: clean(n.id), type: n.type || 'textile', link: n.link || undefined }));
   nodes = nodes.filter(n => n.id);
