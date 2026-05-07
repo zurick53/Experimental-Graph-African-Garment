@@ -155,20 +155,85 @@ function normalizeLinks(rawLinks = []) {
 }
 async function loadData() {
 
-  const rawLocal = localStorage.getItem('graphData');
+  const raw = localStorage.getItem('graphData');
 
-  if (rawLocal) {
-    const data = JSON.parse(rawLocal);
-    applyData(data);
-    updateGraph();
+  // SI localStorage existe → priorité à tes données
+  if (raw) {
+
+    const data = JSON.parse(raw);
+
+    nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => ({
+      id: clean(n.id),
+      type: n.type || 'textile',
+      link: n.link || undefined
+    }));
+
+    nodes = nodes.filter(n => n.id);
+
+    if (!nodes.find(n => n.id === 'Textile')) {
+      nodes.unshift({
+        id: 'Textile',
+        type: 'root',
+        fx: width / 2,
+        fy: height / 2
+      });
+    }
+
+    links = normalizeLinks(
+      Array.isArray(data.links) ? data.links : []
+    );
+
+    links = links.filter(l =>
+      nodes.some(n => n.id === l.source) &&
+      nodes.some(n => n.id === l.target)
+    );
+
     return;
   }
 
-  const res = await fetch('./graphData.json');
-  const data = await res.json();
+  // SINON → charger graphData.json
+  try {
 
-  applyData(data);
-  updateGraph();
+    const res = await fetch('./graphData.json');
+    const data = await res.json();
+
+    nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => ({
+      id: clean(n.id),
+      type: n.type || 'textile',
+      link: n.link || undefined
+    }));
+
+    nodes = nodes.filter(n => n.id);
+
+    if (!nodes.find(n => n.id === 'Textile')) {
+      nodes.unshift({
+        id: 'Textile',
+        type: 'root',
+        fx: width / 2,
+        fy: height / 2
+      });
+    }
+
+    links = normalizeLinks(
+      Array.isArray(data.links) ? data.links : []
+    );
+
+    links = links.filter(l =>
+      nodes.some(n => n.id === l.source) &&
+      nodes.some(n => n.id === l.target)
+    );
+
+  } catch (e) {
+
+    nodes = [{
+      id: 'Textile',
+      type: 'root',
+      fx: width / 2,
+      fy: height / 2
+    }];
+
+    links = [];
+  }
 }
 
 }
